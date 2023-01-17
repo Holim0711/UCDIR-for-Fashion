@@ -29,7 +29,7 @@ class OfficeHomeDataset(Dataset):
 
     def __getitem__(self, idx):
         x, c = self.data[idx]
-        x = os.path.join(self.root, self.domain, c, x)
+        x = os.path.join(self.root, self.domain, self.classes[c], x)
         x = Image.open(x).convert('RGB')
         if self.transform is not None:
             x = self.transform(x)
