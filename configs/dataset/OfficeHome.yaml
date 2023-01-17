@@ -3,6 +3,6 @@ root: /datasets/OfficeHome/images
 query_domain: Clipart
 result_domain: Real World
 metric:
-  - P@1
-  - P@5
-  - P@15
+  - P.1
+  - P.5
+  - P.15

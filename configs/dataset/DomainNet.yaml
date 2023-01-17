@@ -3,6 +3,6 @@ root: /datasets/DomainNet/images
 query_domain: sketch
 result_domain: real
 metric:
-  - P@50
-  - P@100
-  - P@200
+  - P.50
+  - P.100
+  - P.200

@@ -1,8 +1,8 @@
 name: DeepFashion
 root: /datasets/DeepFashion1/Consumer_to_Shop_Retrieval/
 metric:
-  - HR@1
-  - HR@5
-  - HR@10
-  - HR@20
-  - HR@50
+  - HR.1
+  - HR.5
+  - HR.10
+  - HR.20
+  - HR.50

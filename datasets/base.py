@@ -48,3 +48,7 @@ class BaseDataModule(LightningDataModule):
     def val_dataloader(self):
         return [self.get_dataloader('source_val', shuffle=False),
                 self.get_dataloader('target_val', shuffle=False)]
+
+    def test_dataloader(self):
+        return [self.get_dataloader('source_test', shuffle=False),
+                self.get_dataloader('target_test', shuffle=False)]

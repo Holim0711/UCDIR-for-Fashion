@@ -95,11 +95,11 @@ class BaseModule(pl.LightningModule):
         self.ema_model.update_parameters(self.model)
         self.ema_head.update_parameters(self.head)
 
-    def validation_step(self, batch, batch_idx, dataloader_idx):
+    def shared_step(self, batch, batch_idx, dataloader_idx):
         x, c = batch
         return {'v': self(x), 'c': c}
 
-    def validation_epoch_end(self, outputs):
+    def shared_epoch_end(self, stage, outputs):
         sources, targets = outputs
         sources = {
             'v': torch.concat([x['v'] for x in sources]),
@@ -119,23 +119,29 @@ class BaseModule(pl.LightningModule):
         rels = (preds == sources['c'].unsqueeze(-1))
 
         mAP = retrieval_mAP(rels)
-        self.log('val/mAP', mAP, sync_dist=True)
+        self.log(f'{stage}/mAP', mAP, sync_dist=True)
 
         for metric in self.hparams.dataset['metric']:
-            name, k = metric.split('@')
+            name, k = metric.split('.')
             if name == 'HR':
                 v = retrieval_HR(rels, int(k))
             elif name == 'P':
                 v = retrieval_P(rels, int(k))
             else:
                 raise NotImplementedError(metric)
-            self.log('val/' + metric.replace('@', '.'), v, sync_dist=True)
+            self.log(f'{stage}/{metric}', v, sync_dist=True)
 
-    def test_step(self, batch, batch_idx):
-        return self.validation_step(batch, batch_idx)
+    def validation_step(self, *args, **kwargs):
+        return self.shared_step(*args, **kwargs)
 
-    def test_epoch_end(self, outputs):
-        return self.validation_epoch_end(outputs)
+    def validation_epoch_end(self, *args, **kwargs):
+        return self.shared_epoch_end('val', *args, **kwargs)
+
+    def test_step(self, *args, **kwargs):
+        return self.shared_step(*args, **kwargs)
+
+    def test_epoch_end(self, *args, **kwargs):
+        return self.shared_epoch_end('test', *args, **kwargs)
 
     def configure_optimizers(self):
         params = self.model.parameters()
