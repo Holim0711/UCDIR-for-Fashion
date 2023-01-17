@@ -82,9 +82,9 @@ class BaseModule(pl.LightningModule):
         self.model = load_moco_v2()
         self.head = ProjectionHead(2048, 128, 128)
 
-        # change_bn_momentum(self.model, self.hparams.ema)
+        change_bn_momentum(self.model, self.hparams.ema)
         self.ema_model = EMAModel(self.model, self.hparams.ema)
-        # change_bn_momentum(self.head, self.hparams.ema)
+        change_bn_momentum(self.head, self.hparams.ema)
         self.ema_head = EMAModel(self.head, self.hparams.ema)
 
     def forward(self, x):

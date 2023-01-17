@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Logs
+.hydra
+lightning_logs
+outputs
+
+# Pretrained Weights
+misc/moco_v2_800ep_pretrain.pth.tar
