@@ -1,5 +1,5 @@
 import os
-from typing import Callable
+from typing import Callable, Optional
 from itertools import chain
 from torch.utils.data import Dataset
 from PIL import Image
@@ -53,8 +53,7 @@ class OfficeHomeDataModule(BaseDataModule):
         self.target_domain = target_domain
         self.classes = sorted(os.listdir(os.path.join(root, source_domain)))
 
-    def get_raw_dataset(self, split: str):
-        transform = self.transforms.get(split)
+    def get_raw_dataset(self, split: str, transform: Optional[Callable] = None):
         dom, part = split.split('_')
         dom = {'source': self.source_domain, 'target': self.target_domain}[dom]
         return OfficeHomeDataset(self.root, dom, part, self.classes, transform)

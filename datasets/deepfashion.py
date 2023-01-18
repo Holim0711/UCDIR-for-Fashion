@@ -1,3 +1,4 @@
+from typing import Callable, Optional
 from os.path import join
 from operator import itemgetter
 from torch.utils.data import Dataset
@@ -46,8 +47,7 @@ class DeepFashionDataset(Dataset):
 
 class DeepFashionDataModule(BaseDataModule):
 
-    def get_raw_dataset(self, split: str):
-        transform = self.transforms.get(split)
+    def get_raw_dataset(self, split: str, transform: Optional[Callable] = None):
         domain, partition = split.split('_')
         domain = {'source': 'consumer', 'target': 'shop'}[domain]
         return DeepFashionDataset(self.root, domain, partition, transform)
