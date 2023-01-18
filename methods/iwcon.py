@@ -4,7 +4,7 @@ from .base import BaseModule
 __all__ = ['IWConModule']
 
 
-class NTCrossEntropy(torch.nn.Module):
+class SimCLRLoss(torch.nn.Module):
 
     def __init__(self, temperature=0.2):
         super().__init__()
@@ -33,7 +33,7 @@ class IWConModule(BaseModule):
 
     def __init__(self, **kwargs):
         super().__init__()
-        self.criterion = NTCrossEntropy(self.hparams.method['temperature'])
+        self.simclr = SimCLRLoss(self.hparams.method['temperature'])
 
     def setup(self, stage=None):
         super().setup(stage)
@@ -62,8 +62,8 @@ class IWConModule(BaseModule):
             zr1 = self.all_gather_w_grad(zr1)
             zr2 = self.all_gather_w_grad(zr2)
 
-        lossˢ = self.criterion(zq1, zq2)
-        lossᵗ = self.criterion(zr1, zr2)
+        lossˢ = self.simclr(zq1, zq2)
+        lossᵗ = self.simclr(zr1, zr2)
         loss = lossˢ + lossᵗ
 
         self.log('train-iwcon/loss', loss)
