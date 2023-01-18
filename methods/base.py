@@ -95,6 +95,9 @@ class BaseModule(pl.LightningModule):
         self.ema_model.update_parameters(self.model)
         self.ema_head.update_parameters(self.head)
 
+    def setup(self, stage=None):
+        self.is_distributed = torch.distributed.is_initialized()
+
     def shared_step(self, batch, batch_idx, dataloader_idx):
         x, c = batch
         return {'v': self(x), 'c': c}
@@ -110,7 +113,7 @@ class BaseModule(pl.LightningModule):
             'c': torch.concat([x['c'] for x in targets]),
         }
 
-        if self.trainer.world_size > 1:
+        if self.is_distributed:
             targets = self.all_gather(targets)
             targets = {k: v.flatten(0, 1) for k, v in targets.items()}
 
@@ -119,7 +122,7 @@ class BaseModule(pl.LightningModule):
         rels = (preds == sources['c'].unsqueeze(-1))
 
         mAP = retrieval_mAP(rels)
-        self.log(f'{stage}/mAP', mAP, sync_dist=True)
+        self.log(f'{stage}/mAP', mAP, sync_dist=self.is_distributed)
 
         for metric in self.hparams.dataset['metric']:
             name, k = metric.split('.')
@@ -129,7 +132,7 @@ class BaseModule(pl.LightningModule):
                 v = retrieval_P(rels, int(k))
             else:
                 raise NotImplementedError(metric)
-            self.log(f'{stage}/{metric}', v, sync_dist=True)
+            self.log(f'{stage}/{metric}', v, sync_dist=self.is_distributed)
 
     def validation_step(self, *args, **kwargs):
         return self.shared_step(*args, **kwargs)

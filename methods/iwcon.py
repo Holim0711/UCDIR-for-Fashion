@@ -35,6 +35,13 @@ class IWConModule(BaseModule):
         super().__init__()
         self.criterion = NTCrossEntropy(self.hparams.method['temperature'])
 
+    def setup(self, stage=None):
+        super().setup(stage)
+        if self.is_distributed:
+            self.loss_scalar = self.trainer.world_size
+        else:
+            self.loss_scalar = 1
+
     def all_gather_w_grad(self, x):
         X = self.all_gather(x)
         X[self.global_rank] = x
@@ -49,18 +56,18 @@ class IWConModule(BaseModule):
         z = self.head(z)
         zq1, zq2, zr1, zr2 = z.split([bˢ, bˢ, bᵗ, bᵗ])
 
-        if self.trainer.world_size > 1:
+        if self.is_distributed:
             zq1 = self.all_gather_w_grad(zq1)
             zq2 = self.all_gather_w_grad(zq2)
             zr1 = self.all_gather_w_grad(zr1)
             zr2 = self.all_gather_w_grad(zr2)
 
-        lossˢ = self.criterion(zq1, zq2) * self.trainer.world_size
-        lossᵗ = self.criterion(zr1, zr2) * self.trainer.world_size
+        lossˢ = self.criterion(zq1, zq2)
+        lossᵗ = self.criterion(zr1, zr2)
         loss = lossˢ + lossᵗ
 
-        self.log('train/loss', loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=bˢ + bᵗ)
-        self.log('train/loss_q', lossˢ, on_step=False, on_epoch=True, sync_dist=True, batch_size=bˢ)
-        self.log('train/loss_r', lossᵗ, on_step=False, on_epoch=True, sync_dist=True, batch_size=bᵗ)
+        self.log('train-iwcon/loss', loss)
+        self.log('train-iwcon/loss_s', lossˢ)
+        self.log('train-iwcon/loss_t', lossᵗ)
 
-        return {'loss': loss}
+        return {'loss': loss * self.loss_scalar}
