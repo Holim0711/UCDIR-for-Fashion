@@ -1,5 +1,5 @@
 defaults:
-    - dataset: DeepFashion
+    - dataset: OfficeHome
     - _self_
 method:
     name: IWCon
@@ -16,6 +16,6 @@ optimizer:
     nesterov: true
 scheduler:
     name: CosineAnnealingLR
-    T_max: 30
+    T_max: 200
 random_seed: 0
-max_epochs: 30
+max_epochs: 200

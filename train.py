@@ -15,6 +15,7 @@ def main(config):
 
     trainer = Trainer(
         **vars(parse_env_variables(Trainer)),
+        max_epochs=config['max_epochs'],
         callbacks=[
             ModelCheckpoint(monitor='val/mAP', mode='max'),
             LearningRateMonitor(),
