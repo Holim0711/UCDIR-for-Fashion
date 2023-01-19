@@ -1,10 +1,11 @@
+import os
 import hydra
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.argparse import parse_env_variables
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
-from lightning_lite import seed_everything
+from pytorch_lightning import seed_everything
 from torchvision import transforms as trfms
-
+from torch.utils.data import DataLoader
 from methods import *
 from datasets import *
 
@@ -73,6 +74,18 @@ def main(config):
 
     if config['method']['name'] == 'IWCon':
         model = IWConModule(**config)
+    if config['method']['name'] == 'CWCon':
+        model = CWConModule(**config)
+    if config['method']['name'] == 'DomAdv':
+        model = DomAdvModule(**config)
+
+    fixed_source_dataset = dm.get_raw_dataset('source_train', val_transform)
+    fixed_target_dataset = dm.get_raw_dataset('target_train', val_transform)
+    n = os.cpu_count() // 2
+    kwargs = {'batch_size': n, 'num_workers': n, 'pin_memory': True}
+    fixed_source_loader = DataLoader(fixed_source_dataset, **kwargs)
+    fixed_target_loader = DataLoader(fixed_target_dataset, **kwargs)
+    model.prepare_deterministic_dataloaders(fixed_source_loader, fixed_target_loader)
 
     trainer.fit(model, dm)
 

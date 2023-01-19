@@ -22,24 +22,25 @@ class IWConModule(BaseModule):
     def __init__(self, **kwargs):
         super().__init__()
         self.iwcon = IWConLoss(self.hparams.method['temperature'])
-        self.queue = {'sources': None, 'targets': None}
-
-    def all_gather_w_grad(self, x):
-        X = self.all_gather(x)
-        X[self.global_rank] = x
-        return X.flatten(0, 1)
+        self.queue = {'source': None, 'target': None}
 
     def prepare_deterministic_dataloaders(self, source_loader, target_loader):
-        self.det_loaders = {'sources': source_loader, 'targets': target_loader}
+        self.det_loaders = {'source': source_loader, 'target': target_loader}
 
     def on_train_start(self):
-        self.ema_model.eval()
-        self.ema_head.eval()
+        super().on_train_start()
+        device = self.device
         with torch.no_grad():
-            for k in self.queue:
+            for k in ['source', 'target']:
                 loader = tqdm(self.det_loaders[k], f'initialize queue for {k}')
-                features = [self(x.to(self.device), head=True) for x in loader]
-                self.queue[k] = torch.concat(features)
+                vectors = [self(x.to(device), with_head=True) for x in loader]
+                self.queue[k] = torch.concat(vectors)
+
+    def update_queue(self, domain, indices, vectors):
+        if self.is_distributed:
+            indices = self.all_gather(indices).flatten(0, 1)
+            vectors = self.all_gather(vectors).flatten(0, 1)
+        self.queue[domain][indices] = vectors
 
     def training_step(self, batch, batch_idx):
         iˢ, (s1, s2) = batch['source']
@@ -55,19 +56,11 @@ class IWConModule(BaseModule):
             z = self.ema_head(z)
             zs2, zt2 = z.split([bˢ, bᵗ])
 
-        if self.is_distributed:
-            iˢ = self.all_gather(iˢ).flatten(0, 1)
-            iᵗ = self.all_gather(iᵗ).flatten(0, 1)
-            zs1 = self.all_gather_w_grad(zs1)
-            zt1 = self.all_gather_w_grad(zt1)
-            zs2 = self.all_gather(zs2).flatten(0, 1)
-            zt2 = self.all_gather(zt2).flatten(0, 1)
+        self.update_queue('source', iˢ, zs2)
+        self.update_queue('target', iᵗ, zt2)
 
-        self.queue['sources'].index_copy_(0, iˢ, zs2)
-        self.queue['targets'].index_copy_(0, iᵗ, zt2)
-
-        iw_lossˢ = self.iwcon(zs1, zs2, self.queue['sources'])
-        iw_lossᵗ = self.iwcon(zt1, zt2, self.queue['targets'])
+        iw_lossˢ = self.iwcon(zs1, zs2, self.queue['source'])
+        iw_lossᵗ = self.iwcon(zt1, zt2, self.queue['target'])
         iw_loss = iw_lossˢ + iw_lossᵗ
 
         self.log('train-iwcon/loss', iw_loss, sync_dist=self.is_distributed)

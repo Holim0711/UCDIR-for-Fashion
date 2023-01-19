@@ -80,16 +80,17 @@ class BaseModule(pl.LightningModule):
         self.save_hyperparameters()
 
         self.model = load_moco_v2()
-        self.head = ProjectionHead(2048, 128, 128)
+        self.head = ProjectionHead(2048, 2048, 128)
 
-        change_bn_momentum(self.model, self.hparams.ema)
+        change_bn_momentum(self, self.hparams.ema)
         self.ema_model = EMAModel(self.model, self.hparams.ema)
-        change_bn_momentum(self.head, self.hparams.ema)
         self.ema_head = EMAModel(self.head, self.hparams.ema)
+        self.ema_model.eval()
+        self.ema_head.eval()
 
-    def forward(self, x, head=False):
+    def forward(self, x, with_head=False):
         x = self.ema_model(x)
-        if head:
+        if with_head:
             x = self.ema_head(x)
         return x
 
@@ -98,12 +99,18 @@ class BaseModule(pl.LightningModule):
         self.ema_model.update_parameters(self.model)
         self.ema_head.update_parameters(self.head)
 
-    def setup(self, stage=None):
-        self.is_distributed = torch.distributed.is_initialized()
-
-    def on_train_epoch_start(self):
+    def on_train_start(self):
+        super().on_train_start()
         self.ema_model.eval()
         self.ema_head.eval()
+
+    def on_validation_model_train(self):
+        super().on_validation_model_train()
+        self.ema_model.eval()
+        self.ema_head.eval()
+
+    def setup(self, stage=None):
+        self.is_distributed = torch.distributed.is_initialized()
 
     def shared_step(self, batch, batch_idx, dataloader_idx):
         x, c = batch
@@ -154,7 +161,7 @@ class BaseModule(pl.LightningModule):
         return self.shared_epoch_end('test', *args, **kwargs)
 
     def configure_optimizers(self):
-        params = self.model.parameters()
+        params = [v for k, v in self.named_parameters() if 'ema' not in k]
         optim = get_optimizer(params, **self.hparams.optimizer)
         sched = get_scheduler(optim, **self.hparams.scheduler)
         return {'optimizer': optim, 'lr_scheduler': {'scheduler': sched}}
