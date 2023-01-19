@@ -87,8 +87,11 @@ class BaseModule(pl.LightningModule):
         change_bn_momentum(self.head, self.hparams.ema)
         self.ema_head = EMAModel(self.head, self.hparams.ema)
 
-    def forward(self, x):
-        return self.ema_model(x)
+    def forward(self, x, head=False):
+        x = self.ema_model(x)
+        if head:
+            x = self.ema_head(x)
+        return x
 
     def optimizer_step(self, *args, **kwargs):
         super().optimizer_step(*args, **kwargs)
@@ -97,6 +100,10 @@ class BaseModule(pl.LightningModule):
 
     def setup(self, stage=None):
         self.is_distributed = torch.distributed.is_initialized()
+
+    def on_train_epoch_start(self):
+        self.ema_model.eval()
+        self.ema_head.eval()
 
     def shared_step(self, batch, batch_idx, dataloader_idx):
         x, c = batch

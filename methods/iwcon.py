@@ -1,73 +1,77 @@
 import torch
+from tqdm import tqdm
 from .base import BaseModule
 
 __all__ = ['IWConModule']
 
 
-class SimCLRLoss(torch.nn.Module):
+class IWConLoss(torch.nn.Module):
 
     def __init__(self, temperature=0.2):
         super().__init__()
-        self.temperature = temperature
+        self.τ = temperature
 
-    def forward(self, out_1, out_2):
-        out = torch.cat([out_1, out_2], dim=0)
-        n_samples = len(out)
-
-        # Full similarity matrix
-        cov = torch.mm(out, out.t().contiguous())
-        sim = torch.exp(cov / self.temperature)
-
-        mask = ~torch.eye(n_samples, device=sim.device).bool()
-        neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
-
-        # Positive similarity
-        pos = torch.exp(torch.sum(out_1 * out_2, dim=-1) / self.temperature)
-        pos = torch.cat([pos, pos], dim=0)
-
-        loss = -torch.log(pos / neg).mean()
-        return loss
+    def forward(self, query, pos, neg):
+        neg = torch.mm(query, neg.t().contiguous()) / self.τ
+        pos = torch.sum(query * pos, dim=-1) / self.τ
+        return torch.mean(neg.logsumexp(dim=-1) - pos)
 
 
 class IWConModule(BaseModule):
 
     def __init__(self, **kwargs):
         super().__init__()
-        self.simclr = SimCLRLoss(self.hparams.method['temperature'])
-
-    def setup(self, stage=None):
-        super().setup(stage)
-        if self.is_distributed:
-            self.loss_scalar = self.trainer.world_size
-        else:
-            self.loss_scalar = 1
+        self.iwcon = IWConLoss(self.hparams.method['temperature'])
+        self.queue = {'sources': None, 'targets': None}
 
     def all_gather_w_grad(self, x):
         X = self.all_gather(x)
         X[self.global_rank] = x
         return X.flatten(0, 1)
 
+    def prepare_deterministic_dataloaders(self, source_loader, target_loader):
+        self.det_loaders = {'sources': source_loader, 'targets': target_loader}
+
+    def on_train_start(self):
+        self.ema_model.eval()
+        self.ema_head.eval()
+        with torch.no_grad():
+            for k in self.queue:
+                loader = tqdm(self.det_loaders[k], f'initialize queue for {k}')
+                features = [self(x.to(self.device), head=True) for x in loader]
+                self.queue[k] = torch.concat(features)
+
     def training_step(self, batch, batch_idx):
-        iˢ, (q1, q2) = batch['source']
-        iᵗ, (r1, r2) = batch['target']
+        iˢ, (s1, s2) = batch['source']
+        iᵗ, (t1, t2) = batch['target']
         bˢ, bᵗ = len(iˢ), len(iᵗ)
 
-        z = self.model(torch.cat((q1, q2, r1, r2)))
+        z = self.model(torch.cat((s1, t1)))
         z = self.head(z)
-        zq1, zq2, zr1, zr2 = z.split([bˢ, bˢ, bᵗ, bᵗ])
+        zs1, zt1 = z.split([bˢ, bᵗ])
+
+        with torch.no_grad():
+            z = self.ema_model(torch.cat((s2, t2)))
+            z = self.ema_head(z)
+            zs2, zt2 = z.split([bˢ, bᵗ])
 
         if self.is_distributed:
-            zq1 = self.all_gather_w_grad(zq1)
-            zq2 = self.all_gather_w_grad(zq2)
-            zr1 = self.all_gather_w_grad(zr1)
-            zr2 = self.all_gather_w_grad(zr2)
+            iˢ = self.all_gather(iˢ).flatten(0, 1)
+            iᵗ = self.all_gather(iᵗ).flatten(0, 1)
+            zs1 = self.all_gather_w_grad(zs1)
+            zt1 = self.all_gather_w_grad(zt1)
+            zs2 = self.all_gather(zs2).flatten(0, 1)
+            zt2 = self.all_gather(zt2).flatten(0, 1)
 
-        lossˢ = self.simclr(zq1, zq2)
-        lossᵗ = self.simclr(zr1, zr2)
-        loss = lossˢ + lossᵗ
+        self.queue['sources'].index_copy_(0, iˢ, zs2)
+        self.queue['targets'].index_copy_(0, iᵗ, zt2)
 
-        self.log('train-iwcon/loss', loss)
-        self.log('train-iwcon/loss_s', lossˢ)
-        self.log('train-iwcon/loss_t', lossᵗ)
+        iw_lossˢ = self.iwcon(zs1, zs2, self.queue['sources'])
+        iw_lossᵗ = self.iwcon(zt1, zt2, self.queue['targets'])
+        iw_loss = iw_lossˢ + iw_lossᵗ
 
-        return {'loss': loss * self.loss_scalar}
+        self.log('train-iwcon/loss', iw_loss, sync_dist=self.is_distributed)
+        self.log('train-iwcon/loss_s', iw_lossˢ, sync_dist=self.is_distributed)
+        self.log('train-iwcon/loss_t', iw_lossᵗ, sync_dist=self.is_distributed)
+
+        return {'loss': iw_loss}
