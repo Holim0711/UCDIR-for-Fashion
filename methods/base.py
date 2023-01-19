@@ -114,26 +114,21 @@ class BaseModule(pl.LightningModule):
 
     def shared_step(self, batch, batch_idx, dataloader_idx):
         x, c = batch
-        return {'v': self(x), 'c': c}
+        return {'v': self(x).half(), 'c': c}
 
     def shared_epoch_end(self, stage, outputs):
         sources, targets = outputs
-        sources = {
-            'v': torch.concat([x['v'] for x in sources]),
-            'c': torch.concat([x['c'] for x in sources]),
-        }
-        targets = {
-            'v': torch.concat([x['v'] for x in targets]),
-            'c': torch.concat([x['c'] for x in targets]),
-        }
+        vˢ = torch.concat([x['v'] for x in sources])
+        cˢ = torch.concat([x['c'] for x in sources])
+        vᵗ = torch.concat([x['v'] for x in targets])
+        cᵗ = torch.concat([x['c'] for x in targets])
 
         if self.is_distributed:
-            targets = self.all_gather(targets)
-            targets = {k: v.flatten(0, 1) for k, v in targets.items()}
+            vᵗ = self.all_gather(vᵗ).flatten(0, 1)
+            cᵗ = self.all_gather(cᵗ).flatten(0, 1)
 
-        simmat = pairwise_cosine_similarity(sources['v'], targets['v'])
-        preds = targets['c'][simmat.argsort(descending=True)]
-        rels = (preds == sources['c'].unsqueeze(-1))
+        preds = pairwise_cosine_similarity(vˢ, vᵗ).argsort(descending=True)
+        rels = (cᵗ[preds] == cˢ.unsqueeze(-1))
 
         mAP = retrieval_mAP(rels)
         self.log(f'{stage}/mAP', mAP, sync_dist=self.is_distributed)
