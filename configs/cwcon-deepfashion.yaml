@@ -1,0 +1,23 @@
+defaults:
+    - dataset: DeepFashion
+    - _self_
+method:
+    name: CWCon
+    temperature: 0.2
+    num_clusters: 23
+    cwcon_weight: 0.5
+ema: 0.999
+batch_size:
+    train: 64
+    val: 128
+optimizer:
+    name: SGD
+    lr: 0.0002
+    momentum: 0.9
+    weight_decay: 0.0004
+    nesterov: true
+scheduler:
+    name: CosineAnnealingLR
+    T_max: 30
+random_seed: 0
+max_epochs: 30
