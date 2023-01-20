@@ -108,6 +108,6 @@ class CWConModule(IWConModule):
         λ = self.hparams.method['cwcon_weight']
         start = self.hparams.method['cwcon_start']
         warmup = self.hparams.method['cwcon_warmup']
-        λ *= max(1., min(0., (self.current_epoch - start) / warmup))
+        λ *= min(1., max(0., (self.current_epoch - start) / warmup))
 
         return {'loss': iw_loss + λ * cw_loss}
