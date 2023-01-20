@@ -1,3 +1,4 @@
+from math import ceil
 import torch
 from torchvision.models import resnet50
 import pytorch_lightning as pl
@@ -55,6 +56,19 @@ def pairwise_cosine_similarity(x1, x2, eps=1e-8):
     w1 = x1.norm(dim=-1, keepdim=True)
     w2 = x2.norm(dim=-1, keepdim=True)
     return torch.mm(x1, x2.t()) / (w1 * w2.t()).clamp(min=eps)
+
+
+def splited_result_check(vˢ, vᵗ, cˢ, cᵗ, n_split=4):
+    b = ceil(len(vˢ) / n_split)
+    rels = []
+    for i in range(n_split):
+        rels.append((
+            cᵗ[pairwise_cosine_similarity(
+                    vˢ[b*i:b*(i+1)], vᵗ
+               ).argsort(descending=True)
+            ] == cˢ[b*i:b*(i+1)].unsqueeze(-1)
+        ))
+    return torch.concat(rels)
 
 
 def retrieval_mAP(rels):
@@ -127,8 +141,7 @@ class BaseModule(pl.LightningModule):
             vᵗ = self.all_gather(vᵗ).flatten(0, 1)
             cᵗ = self.all_gather(cᵗ).flatten(0, 1)
 
-        preds = pairwise_cosine_similarity(vˢ, vᵗ).argsort(descending=True)
-        rels = (cᵗ[preds] == cˢ.unsqueeze(-1))
+        rels = splited_result_check(vˢ, vᵗ, cˢ, cᵗ)
 
         mAP = retrieval_mAP(rels)
         self.log(f'{stage}/mAP', mAP, sync_dist=self.is_distributed)

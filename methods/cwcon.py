@@ -105,4 +105,9 @@ class CWConModule(IWConModule):
         self.log('train-cwcon/loss_t', cw_lossᵗ, sync_dist=self.is_distributed)
         self.log('train-cwcon/mask', self.cwcon.mask_ratio, sync_dist=self.is_distributed)
 
-        return {'loss': iw_loss + self.hparams.method['cwcon_weight'] * cw_loss}
+        λ = self.hparams.method['cwcon_weight']
+        start = self.hparams.method['cwcon_start']
+        warmup = self.hparams.method['cwcon_warmup']
+        λ *= max(1., min(0., (self.current_epoch - start) / warmup))
+
+        return {'loss': iw_loss + λ * cw_loss}

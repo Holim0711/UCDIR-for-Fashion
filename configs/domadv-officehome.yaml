@@ -1,14 +1,10 @@
 defaults:
-    - dataset: DeepFashion
+    - dataset: OfficeHome
     - _self_
 method:
-    name: CWCon
+    name: DomAdv
     temperature: 0.2
-    num_clusters: 23
-    cwcon_weight: 0.5
-    cwcon_threshold: 0.2
-    cwcon_start: 0
-    cwcon_warmup: 0
+    domadv_weight: 1.0
 ema: 0.999
 batch_size:
     train: 64
@@ -21,6 +17,6 @@ optimizer:
     nesterov: true
 scheduler:
     name: CosineAnnealingLR
-    T_max: 30
+    T_max: 200
 random_seed: 0
-max_epochs: 30
+max_epochs: 200

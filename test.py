@@ -5,7 +5,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.argparse import parse_env_variables
 from torchvision import transforms as trfms
 
-from methods import *
+from methods import load_module
 from datasets import *
 
 
@@ -44,10 +44,8 @@ def test(config, checkpoint):
             transforms=transforms,
             batch_sizes=batch_sizes)
 
-    if config['method']['name'] == 'IWCon':
-        model = IWConModule.load_from_checkpoint(checkpoint)
+    model = load_module(config, checkpoint)
 
-    trainer.validate(model, datamodule=dm)
     trainer.test(model, datamodule=dm)
 
 

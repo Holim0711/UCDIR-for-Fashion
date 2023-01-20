@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
 from torchvision import transforms as trfms
 from torch.utils.data import DataLoader
-from methods import *
+from methods import build_module
 from datasets import *
 
 
@@ -72,12 +72,7 @@ def main(config):
             transforms=transforms,
             batch_sizes=batch_sizes)
 
-    if config['method']['name'] == 'IWCon':
-        model = IWConModule(**config)
-    if config['method']['name'] == 'CWCon':
-        model = CWConModule(**config)
-    if config['method']['name'] == 'DomAdv':
-        model = DomAdvModule(**config)
+    model = build_module(config)
 
     fixed_source_dataset = dm.get_raw_dataset('source_train', val_transform)
     fixed_target_dataset = dm.get_raw_dataset('target_train', val_transform)

@@ -22,12 +22,22 @@ class DeepFashionDataset(Dataset):
 
         col = ['consumer', 'shop'].index(domain)
 
-        data = read_text(join(root, 'Eval', 'list_eval_partition.txt'))
-        data = [(x[col], x[2]) for x in data if x[3] == partition]
+        raw_data = read_text(join(root, 'Eval', 'list_eval_partition.txt'))
+        data = [(x[col], x[2]) for x in raw_data if x[3] == partition]
         data = sorted(set(data))
         items = sorted(set(map(itemgetter(1), data)))
         boxes = read_text(join(root, 'Anno', 'list_bbox_consumer2shop.txt'))
         boxes = {img: tuple(map(int, bbox)) for img, _, _,  *bbox in boxes}
+
+        if partition == 'test':
+            # test gallery images contain val gallery images
+            val_data = [(x[1], x[2]) for x in raw_data if x[3] == 'val']
+            val_data = sorted(set(data))
+            val_items = sorted(set(map(itemgetter(1), val_data)))
+            if domain == 'shop':
+                data.extend(val_data)
+            items.extend(val_items)
+            items.sort()
 
         self.data = [(x, bisect_left(items, i), boxes[x]) for x, i in data]
 
