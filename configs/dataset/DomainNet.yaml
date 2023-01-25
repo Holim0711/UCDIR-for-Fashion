@@ -1,6 +1,6 @@
 name: DomainNet
 root: /datasets/DomainNet/images
-query_domain: sketch
+query_domain: quickdraw
 result_domain: real
 metric:
   - P.50
