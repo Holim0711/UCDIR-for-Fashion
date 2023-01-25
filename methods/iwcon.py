@@ -32,9 +32,9 @@ class IWConModule(BaseModule):
         device = self.device
         with torch.no_grad():
             for k in ['source', 'target']:
-                loader = tqdm(self.det_loaders[k], f'initialize queue for {k}')
+                pbar = tqdm(self.det_loaders[k], f'initialize queue for {k}')
                 self.queue[k] = torch.concat([
-                    self.ema_head(self.model(x.to(device))) for x in loader])
+                    self.ema_head(self.ema_model(x.to(device))) for x in pbar])
 
     def update_queue(self, domain, indices, vectors):
         if self.is_distributed:
