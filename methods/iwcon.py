@@ -20,7 +20,7 @@ class IWConLoss(torch.nn.Module):
 class IWConModule(BaseModule):
 
     def __init__(self, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         self.iwcon = IWConLoss(self.hparams.method['temperature'])
         self.queue = {'source': None, 'target': None}
 
@@ -33,8 +33,8 @@ class IWConModule(BaseModule):
         with torch.no_grad():
             for k in ['source', 'target']:
                 loader = tqdm(self.det_loaders[k], f'initialize queue for {k}')
-                vectors = [self(x.to(device), with_head=True) for x in loader]
-                self.queue[k] = torch.concat(vectors)
+                self.queue[k] = torch.concat([
+                    self.ema_head(self.model(x.to(device))) for x in loader])
 
     def update_queue(self, domain, indices, vectors):
         if self.is_distributed:

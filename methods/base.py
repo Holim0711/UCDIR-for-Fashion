@@ -102,11 +102,8 @@ class BaseModule(pl.LightningModule):
         self.ema_model.eval()
         self.ema_head.eval()
 
-    def forward(self, x, with_head=False):
-        x = self.ema_model(x)
-        if with_head:
-            x = self.ema_head(x)
-        return x
+    def forward(self, x):
+        return self.ema_model(x)
 
     def optimizer_step(self, *args, **kwargs):
         super().optimizer_step(*args, **kwargs)
