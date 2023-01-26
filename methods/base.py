@@ -5,9 +5,19 @@ import pytorch_lightning as pl
 from weaver import get_optimizer, get_scheduler
 
 
+class L2Norm(torch.nn.Module):
+    def forward(self, x):
+        return torch.nn.functional.normalize(x)
+
+
 def load_moco_v2():
     model = resnet50()
-    model.fc = torch.nn.Identity()
+    model.fc = torch.nn.Sequential(
+        torch.nn.Linear(2048, 2048, bias=True),
+        torch.nn.ReLU(),
+        torch.nn.Linear(2048, 128, bias=False),
+        L2Norm(),
+    )
     checkpoint = torch.load('misc/moco_v2_800ep_pretrain.pth.tar')
     prefix = 'module.encoder_q.'
     state_dict = checkpoint['state_dict']
@@ -34,22 +44,6 @@ class EMAModel(torch.optim.swa_utils.AveragedModel):
         # BatchNorm buffers are already EMA
         for a, b in zip(self.module.buffers(), model.buffers()):
             a.copy_(b.to(a.device))
-
-
-class ProjectionHead(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super().__init__()
-        self.model = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, hidden_dim, bias=True),
-            # torch.nn.BatchNorm1d(hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, output_dim, bias=False),
-            # torch.nn.BatchNorm1d(output_dim),
-        )
-
-    def forward(self, x):
-        x = self.model(x)
-        return torch.nn.functional.normalize(x)
 
 
 def pairwise_cosine_similarity(x1, x2, eps=1e-8):
@@ -94,7 +88,8 @@ class BaseModule(pl.LightningModule):
         self.save_hyperparameters()
 
         self.model = load_moco_v2()
-        self.head = ProjectionHead(2048, 2048, 128)
+        self.head = self.model.fc
+        self.model.fc = torch.nn.Identity()
 
         change_bn_momentum(self, self.hparams.ema)
         self.ema_model = EMAModel(self.model, self.hparams.ema)
