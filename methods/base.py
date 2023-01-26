@@ -121,7 +121,7 @@ class BaseModule(pl.LightningModule):
     def shared_step(self, batch, batch_idx, dataloader_idx):
         x, c = batch
         x = self.ema_model(x)
-        if self.hparams.dataset['name'] in {'OfficeHome', 'DomainNet'}:
+        if self.hparams.use_mlp_at_val:
             x = self.ema_head(x)
         return {'v': x.half(), 'c': c}
 
