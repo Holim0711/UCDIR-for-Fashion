@@ -5,6 +5,7 @@ method:
     name: DomAdv
     temperature: 0.2
     domadv_weight: 1.0
+use_mlp_at_val: false
 ema: 0.999
 batch_size:
     train: 64
