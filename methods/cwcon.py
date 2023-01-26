@@ -1,30 +1,36 @@
 import torch
-import faiss
-from tqdm import tqdm
+import torch.distributed
+# import faiss
+from sklearn.cluster import KMeans
 from .iwcon import IWConModule
 
 __all__ = ['CWConModule']
 
 
-def run_clustering(vectors, k, gpu):
-    vectors = vectors.cpu()
-    d = vectors.shape[1]
-    clus = faiss.Clustering(d, k)
-    clus.verbose = False
-    clus.niter = 20
-    clus.nredo = 5
-    clus.seed = 0
-    clus.max_points_per_centroid = 2000
-    clus.min_points_per_centroid = 2
-    cfg = faiss.GpuIndexFlatConfig()
-    cfg.useFloat16 = False
-    cfg.device = gpu
-    index = faiss.IndexFlatL2(d)
-    clus.train(vectors, index)
-    _, C = index.search(vectors, 1)
-    clusters = [int(x[0]) for x in C]
-    centroids = faiss.vector_to_array(clus.centroids).reshape(k, d)
-    return torch.tensor(centroids), torch.tensor(clusters)
+def run_clustering(vectors: torch.Tensor, k):
+    X = vectors.cpu().numpy()
+    kmeans = KMeans(n_clusters=k, n_init="auto", random_state=0).fit(X)
+    centroids = torch.tensor(kmeans.cluster_centers_)
+    clusters = torch.tensor(kmeans.labels_, dtype=torch.int64)
+    return centroids, clusters
+    # vectors = vectors.cpu()
+    # d = vectors.shape[1]
+    # clus = faiss.Clustering(d, k)
+    # clus.verbose = False
+    # clus.niter = 20
+    # clus.nredo = 5
+    # clus.seed = 0
+    # clus.max_points_per_centroid = 2000
+    # clus.min_points_per_centroid = 2
+    # cfg = faiss.GpuIndexFlatConfig()
+    # cfg.useFloat16 = False
+    # cfg.device = True
+    # index = faiss.IndexFlatL2(d)
+    # clus.train(vectors, index)
+    # _, C = index.search(vectors, 1)
+    # clusters = [int(x[0]) for x in C]
+    # centroids = faiss.vector_to_array(clus.centroids).reshape(k, d)
+    # return torch.tensor(centroids), torch.tensor(clusters)
 
 
 class CWConLoss(torch.nn.Module):
@@ -59,17 +65,19 @@ class CWConModule(IWConModule):
         self.clusters = {'source': None, 'target': None}
 
     def on_train_epoch_start(self):
-        device = self.device
         nc = self.hparams.method['num_clusters']
-        gpu = self.global_rank
-        with torch.no_grad():
-            for k in ['source', 'target']:
-                loader = tqdm(self.det_loaders[k], f'run clustering for {k}')
-                vectors = [self(x.to(device), with_head=True) for x in loader]
-                vectors = torch.concat(vectors)
-                centroids, clusters = run_clustering(vectors, nc, gpu)
-                self.centroids[k] = centroids.to(self.device)
-                self.clusters[k] = clusters.to(self.device)
+        for k in ['source', 'target']:
+            if not self.is_distributed or self.global_rank == 0:
+                vectors = self.all_features(k, f'clustering for {k}')
+                centroids, clusters = run_clustering(vectors, nc)
+            else:
+                centroids = torch.zeros(nc, 128)
+                clusters = torch.zeros(len(self.queue[k]), dtype=int)
+            if self.is_distributed:
+                torch.distributed.broadcast(centroids, 0)
+                torch.distributed.broadcast(clusters, 0)
+            self.centroids[k] = centroids.to(self.device)
+            self.clusters[k] = clusters.to(self.device)
 
     def training_step(self, batch, batch_idx):
         iˢ, (s1, s2) = batch['source']
@@ -97,17 +105,36 @@ class CWConModule(IWConModule):
         cw_lossᵗ = self.cwcon(zt1, cᵗ, self.queue['target'], self.clusters['target'], self.centroids['target'])
         cw_loss = cw_lossˢ + cw_lossᵗ
 
-        self.log('train-iwcon/loss', iw_loss, sync_dist=self.is_distributed)
-        self.log('train-iwcon/loss_s', iw_lossˢ, sync_dist=self.is_distributed)
-        self.log('train-iwcon/loss_t', iw_lossᵗ, sync_dist=self.is_distributed)
-        self.log('train-cwcon/loss', cw_loss, sync_dist=self.is_distributed)
-        self.log('train-cwcon/loss_s', cw_lossˢ, sync_dist=self.is_distributed)
-        self.log('train-cwcon/loss_t', cw_lossᵗ, sync_dist=self.is_distributed)
-        self.log('train-cwcon/mask', self.cwcon.mask_ratio, sync_dist=self.is_distributed)
-
         λ = self.hparams.method['cwcon_weight']
         start = self.hparams.method['cwcon_start']
         warmup = self.hparams.method['cwcon_warmup']
         λ *= min(1., max(0., (self.current_epoch - start) / warmup))
 
-        return {'loss': iw_loss + λ * cw_loss}
+        loss = iw_loss + λ * cw_loss
+
+        return {
+            'loss': loss,
+            'iwcon': {'loss_s': iw_lossˢ, 'loss_t': iw_lossᵗ},
+            'cwcon': {'loss_s': cw_lossˢ, 'loss_t': cw_lossᵗ,
+                      'warm': λ, 'mask': self.cwcon.mask_ratio},
+        }
+
+    def training_epoch_end(self, outputs):
+        def agg(f):
+            return torch.tensor(list(map(f, outputs))).mean()
+        loss = agg(lambda x: x['loss'])
+        iw_lossˢ = agg(lambda x: x['iwcon']['loss_s'])
+        iw_lossᵗ = agg(lambda x: x['iwcon']['loss_t'])
+        cw_lossˢ = agg(lambda x: x['cwcon']['loss_s'])
+        cw_lossᵗ = agg(lambda x: x['cwcon']['loss_t'])
+        cw_warm = agg(lambda x: x['cwcon']['warm'])
+        cw_mask = agg(lambda x: x['cwcon']['mask'])
+        self.log_dict({
+            'train/loss': loss,
+            'train-iwcon/loss_s': iw_lossˢ,
+            'train-iwcon/loss_t': iw_lossᵗ,
+            'train-cwcon/loss_s': cw_lossˢ,
+            'train-cwcon/loss_t': cw_lossᵗ,
+            'train-cwcon/warm': cw_warm,
+            'train-cwcon/mask': cw_mask,
+        }, sync_dist=self.is_distributed)

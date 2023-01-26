@@ -4,6 +4,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.argparse import parse_env_variables
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision import transforms as trfms
 from torch.utils.data import DataLoader
 from methods import build_module
@@ -17,6 +18,7 @@ def main(config):
     trainer = Trainer(
         **vars(parse_env_variables(Trainer)),
         max_epochs=config['max_epochs'],
+        logger=TensorBoardLogger('lightning_logs', config['dataset']['name']),
         callbacks=[
             ModelCheckpoint(monitor='val/mAP', mode='max'),
             LearningRateMonitor(),
@@ -76,7 +78,7 @@ def main(config):
 
     fixed_source_dataset = dm.get_raw_dataset('source_train', val_transform)
     fixed_target_dataset = dm.get_raw_dataset('target_train', val_transform)
-    n = os.cpu_count() // 2
+    n = os.cpu_count() // 8
     kwargs = {'batch_size': n, 'num_workers': n, 'pin_memory': True}
     fixed_source_loader = DataLoader(fixed_source_dataset, **kwargs)
     fixed_target_loader = DataLoader(fixed_target_dataset, **kwargs)

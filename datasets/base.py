@@ -32,7 +32,7 @@ class BaseDataModule(LightningDataModule):
     def get_dataloader(self, split: str, **kwargs):
         dataset = self.datasets[split]
         batch_size = self.batch_sizes[split]
-        kwargs.setdefault('num_workers', min(os.cpu_count() // 4, batch_size))
+        kwargs.setdefault('num_workers', min(os.cpu_count() // 8, batch_size))
         kwargs.setdefault('pin_memory', True)
         if split.endswith('train'):
             dataset = IndexedDataset(dataset)

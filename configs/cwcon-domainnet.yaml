@@ -1,15 +1,15 @@
 defaults:
-    - dataset: DeepFashion
+    - dataset: DomainNet
     - _self_
 method:
     name: CWCon
     temperature: 0.2
-    num_clusters: 23
-    cwcon_weight: 0.5
+    num_clusters: 7
+    cwcon_weight: 1.0
     cwcon_threshold: 0.2
-    cwcon_start: 0
-    cwcon_warmup: 0
-use_mlp_at_val: false
+    cwcon_start: 20
+    cwcon_warmup: 80
+use_mlp_at_val: true
 ema: 0.999
 batch_size:
     train: 64
@@ -22,6 +22,6 @@ optimizer:
     nesterov: true
 scheduler:
     name: CosineAnnealingLR
-    T_max: 30
+    T_max: 200
 random_seed: 0
-max_epochs: 30
+max_epochs: 200

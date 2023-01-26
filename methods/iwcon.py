@@ -27,14 +27,17 @@ class IWConModule(BaseModule):
     def prepare_deterministic_dataloaders(self, source_loader, target_loader):
         self.det_loaders = {'source': source_loader, 'target': target_loader}
 
+    def all_features(self, domain, desc=None):
+        d = self.device
+        loader = tqdm(self.det_loaders[domain], desc)
+        with torch.no_grad():
+            features = [self.ema_head(self.ema_model(x.to(d))) for x in loader]
+        return torch.concat(features)
+
     def on_train_start(self):
         super().on_train_start()
-        device = self.device
-        with torch.no_grad():
-            for k in ['source', 'target']:
-                pbar = tqdm(self.det_loaders[k], f'initialize queue for {k}')
-                self.queue[k] = torch.concat([
-                    self.ema_head(self.ema_model(x.to(device))) for x in pbar])
+        for k in ['source', 'target']:
+            self.queue[k] = self.all_features(k, f'initialize queue for {k}')
 
     def update_queue(self, domain, indices, vectors):
         if self.is_distributed:
@@ -63,8 +66,19 @@ class IWConModule(BaseModule):
         iw_lossᵗ = self.iwcon(zt1, zt2, self.queue['target'])
         iw_loss = iw_lossˢ + iw_lossᵗ
 
-        self.log('train-iwcon/loss', iw_loss, sync_dist=self.is_distributed)
-        self.log('train-iwcon/loss_s', iw_lossˢ, sync_dist=self.is_distributed)
-        self.log('train-iwcon/loss_t', iw_lossᵗ, sync_dist=self.is_distributed)
+        return {
+            'loss': iw_loss,
+            'iwcon': {'loss_s': iw_lossˢ, 'loss_t': iw_lossᵗ}
+        }
 
-        return {'loss': iw_loss}
+    def training_epoch_end(self, outputs):
+        def agg(f):
+            return torch.tensor(list(map(f, outputs))).mean()
+        loss = agg(lambda x: x['loss'])
+        iw_lossˢ = agg(lambda x: x['iwcon']['loss_s'])
+        iw_lossᵗ = agg(lambda x: x['iwcon']['loss_t'])
+        self.log_dict({
+            'train/loss': loss,
+            'train-iwcon/loss_s': iw_lossˢ,
+            'train-iwcon/loss_t': iw_lossᵗ,
+        }, sync_dist=self.is_distributed)

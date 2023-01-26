@@ -8,7 +8,8 @@ method:
     cwcon_weight: 0.5
     cwcon_threshold: 0.2
     cwcon_start: 20
-    cwcon_warmup: 100
+    cwcon_warmup: 80
+use_mlp_at_val: true
 ema: 0.999
 batch_size:
     train: 64
