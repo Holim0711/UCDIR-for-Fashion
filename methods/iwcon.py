@@ -1,5 +1,6 @@
 import torch
 from tqdm import tqdm
+from operator import itemgetter
 from .base import BaseModule
 
 __all__ = ['IWConModule']
@@ -45,40 +46,46 @@ class IWConModule(BaseModule):
             vectors = self.all_gather(vectors).flatten(0, 1)
         self.queue[domain][indices] = vectors
 
+    def forward_step(self, x1, x2):
+        z1 = self.model(x1)
+        p1 = self.head(z1)
+        with torch.no_grad():
+            z2 = self.ema_model(x2)
+            p2 = self.ema_head(z2)
+        return z1, p1, z2, p2
+
     def training_step(self, batch, batch_idx):
         iˢ, (s1, s2) = batch['source']
         iᵗ, (t1, t2) = batch['target']
         bˢ, bᵗ = len(iˢ), len(iᵗ)
 
-        z = self.model(torch.cat((s1, t1)))
-        z = self.head(z)
-        zs1, zt1 = z.split([bˢ, bᵗ])
+        x1, x2 = torch.cat([s1, t1]), torch.cat([s2, t2])
+        _, p1, _, p2 = self.forward_step(x1, x2)
+        (ps1, pt1), (ps2, pt2) = p1.split([bˢ, bᵗ]), p2.split([bˢ, bᵗ])
 
-        with torch.no_grad():
-            z = self.ema_model(torch.cat((s2, t2)))
-            z = self.ema_head(z)
-            zs2, zt2 = z.split([bˢ, bᵗ])
+        self.update_queue('source', iˢ, ps2)
+        self.update_queue('target', iᵗ, pt2)
 
-        self.update_queue('source', iˢ, zs2)
-        self.update_queue('target', iᵗ, zt2)
-
-        iw_lossˢ = self.iwcon(zs1, zs2, self.queue['source'])
-        iw_lossᵗ = self.iwcon(zt1, zt2, self.queue['target'])
+        iw_lossˢ = self.iwcon(ps1, ps2, self.queue['source'])
+        iw_lossᵗ = self.iwcon(pt1, pt2, self.queue['target'])
         iw_loss = iw_lossˢ + iw_lossᵗ
 
         return {
             'loss': iw_loss,
-            'iwcon': {'loss_s': iw_lossˢ, 'loss_t': iw_lossᵗ}
+            'iwcon/loss_s': iw_lossˢ,
+            'iwcon/loss_t': iw_lossᵗ,
         }
 
-    def training_epoch_end(self, outputs):
-        def agg(f):
-            return torch.tensor(list(map(f, outputs))).mean()
-        loss = agg(lambda x: x['loss'])
-        iw_lossˢ = agg(lambda x: x['iwcon']['loss_s'])
-        iw_lossᵗ = agg(lambda x: x['iwcon']['loss_t'])
+    def log_mean(self, outputs, keys):
+        def aggr(k):
+            return torch.tensor(list(map(itemgetter(k), outputs))).mean()
         self.log_dict({
-            'train/loss': loss,
-            'train-iwcon/loss_s': iw_lossˢ,
-            'train-iwcon/loss_t': iw_lossᵗ,
+            'train/loss': aggr('loss'),
+            **{'train-' + k: aggr(k) for k in keys}
         }, sync_dist=self.is_distributed)
+
+    def training_epoch_end(self, outputs):
+        self.log_mean(outputs, [
+            'iwcon/loss_s',
+            'iwcon/loss_t',
+        ])
