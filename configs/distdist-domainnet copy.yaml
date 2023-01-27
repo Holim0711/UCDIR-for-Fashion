@@ -2,7 +2,7 @@ defaults:
     - dataset: DomainNet
     - _self_
 method:
-    name: CWCon
+    name: SelfEntropy
     temperature: 0.2
     num_clusters: 7
     cwcon_weight: 1.0
@@ -10,6 +10,12 @@ method:
     cwcon_threshold: 0.2
     cwcon_start: 20
     cwcon_warmup: 80
+    selfent_temperature: 0.1
+    selfent_start: 100
+    selfent_weight: 0.5
+    distdist_temperature: 0.01
+    distdist_start: 100
+    distdist_weight: 0.1
 use_mlp_at_val: true
 ema: 0.999
 batch_size:

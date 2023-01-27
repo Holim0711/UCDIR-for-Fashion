@@ -6,6 +6,7 @@ method:
     temperature: 0.2
     num_clusters: 65
     cwcon_weight: 0.5
+    cwcon_temperature: 0.2
     cwcon_threshold: 0.2
     cwcon_start: 20
     cwcon_warmup: 80
