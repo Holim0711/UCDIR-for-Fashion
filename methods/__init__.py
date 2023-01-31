@@ -3,6 +3,7 @@ from .cwcon import CWConModule
 from .selfent import SelfEntropyModule
 from .distdist import DistDistModule
 from .domadv import DomAdvModule
+from .ddda import DDDAModule
 
 
 def get_module_class(name):
@@ -16,7 +17,8 @@ def get_module_class(name):
         return DistDistModule
     if name == 'DomAdv':
         return DomAdvModule
-
+    if name == 'DDDA':
+        return DDDAModule
 
 def build_module(config):
     return get_module_class(config['method']['name'])(**config)

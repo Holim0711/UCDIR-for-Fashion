@@ -1,8 +1,9 @@
 import os
 import hydra
+import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.argparse import parse_env_variables
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning import seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision import transforms as trfms
@@ -19,10 +20,7 @@ def main(config):
         **vars(parse_env_variables(Trainer)),
         max_epochs=config['max_epochs'],
         logger=TensorBoardLogger('lightning_logs', config['dataset']['name']),
-        callbacks=[
-            ModelCheckpoint(monitor='val/mAP', mode='max'),
-            LearningRateMonitor(),
-        ]
+        callbacks=[LearningRateMonitor()]
     )
 
     train_transform = trfms.Compose([
@@ -88,4 +86,5 @@ def main(config):
 
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision('high')
     main()

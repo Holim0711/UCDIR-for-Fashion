@@ -1,4 +1,3 @@
-import os
 import torch
 from pytorch_revgrad import RevGrad
 from .iwcon import IWConModule
@@ -11,7 +10,7 @@ class DomAdvModule(IWConModule):
     def __init__(self, **kwargs):
         super().__init__()
         self.domadv = torch.nn.Sequential(
-            RevGrad(),
+            RevGrad(self.hparams.method['domadv_alpha']),
             torch.nn.Linear(2048, 2048),
             torch.nn.ReLU(),
             torch.nn.Linear(2048, 2),
@@ -23,14 +22,20 @@ class DomAdvModule(IWConModule):
         iᵗ, (t1, t2) = batch['target']
         bˢ, bᵗ = len(iˢ), len(iᵗ)
 
-        z1, p1, _, p2 = self.forward_step(torch.cat(s1, t1), torch.cat(s2, t2))
-        (ps1, pt1), (ps2, pt2) = p1.split([bˢ, bᵗ]), p2.split([bˢ, bᵗ])
+        v1, z1 = self.model(torch.cat([s1, t1]))
+        v1 = torch.nn.functional.normalize(v1)
 
-        self.update_queue('source', iˢ, ps2)
-        self.update_queue('target', iᵗ, pt2)
+        with torch.no_grad():
+            v2, _ = self.ema(torch.cat([s2, t2]))
+            v2 = torch.nn.functional.normalize(v2)
 
-        iw_lossˢ = self.iwcon(ps1, ps2, self.queue['source'])
-        iw_lossᵗ = self.iwcon(pt1, pt2, self.queue['target'])
+        (vs1, vt1), (vs2, vt2) = v1.split([bˢ, bᵗ]), v2.split([bˢ, bᵗ])
+
+        self.update_queue('source', iˢ, vs2)
+        self.update_queue('target', iᵗ, vt2)
+
+        iw_lossˢ = self.iwcon(vs1, vs2, self.queue['source'])
+        iw_lossᵗ = self.iwcon(vt1, vt2, self.queue['target'])
         iw_loss = iw_lossˢ + iw_lossᵗ
 
         z_adv = self.domadv(z1)
@@ -43,20 +48,16 @@ class DomAdvModule(IWConModule):
 
         return {
             'loss': loss,
-            'iwcon': {'loss_s': iw_lossˢ, 'loss_t': iw_lossᵗ},
-            'domadv': {'loss': adv_loss, 'weight': adv_λ},
+            'iwcon/loss_s': iw_lossˢ,
+            'iwcon/loss_t': iw_lossᵗ,
+            'domadv/loss': adv_loss,
+            'domadv/weight': adv_λ,
         }
 
     def training_epoch_end(self, outputs):
-        def agg(f):
-            return torch.tensor(list(map(f, outputs))).mean()
-        loss = agg(lambda x: x['loss'])
-        iw_lossˢ = agg(lambda x: x['iwcon']['loss_s'])
-        iw_lossᵗ = agg(lambda x: x['iwcon']['loss_t'])
-        adv_loss = agg(lambda x: x['domadv']['loss'])
-        self.log_dict({
-            'train/loss': loss,
-            'train-iwcon/loss_s': iw_lossˢ,
-            'train-iwcon/loss_t': iw_lossᵗ,
-            'train-domadv/loss': adv_loss,
-        }, sync_dist=self.is_distributed)
+        self.log_mean(outputs, [
+            'iwcon/loss_s',
+            'iwcon/loss_t',
+            'domadv/loss',
+            'domadv/weight',
+        ])

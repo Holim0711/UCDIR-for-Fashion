@@ -32,8 +32,8 @@ class IWConModule(BaseModule):
         d = self.device
         loader = tqdm(self.det_loaders[domain], desc)
         with torch.no_grad():
-            features = [self.ema_head(self.ema_model(x.to(d))) for x in loader]
-        return torch.concat(features)
+            features = [(self(x.to(d))) for x in loader]
+        return torch.nn.functional.normalize(torch.concat(features))
 
     def on_train_start(self):
         super().on_train_start()
@@ -46,28 +46,25 @@ class IWConModule(BaseModule):
             vectors = self.all_gather(vectors).flatten(0, 1)
         self.queue[domain][indices] = vectors
 
-    def forward_step(self, x1, x2):
-        z1 = self.model(x1)
-        p1 = self.head(z1)
-        with torch.no_grad():
-            z2 = self.ema_model(x2)
-            p2 = self.ema_head(z2)
-        return z1, p1, z2, p2
-
     def training_step(self, batch, batch_idx):
         iˢ, (s1, s2) = batch['source']
         iᵗ, (t1, t2) = batch['target']
         bˢ, bᵗ = len(iˢ), len(iᵗ)
 
-        x1, x2 = torch.cat([s1, t1]), torch.cat([s2, t2])
-        _, p1, _, p2 = self.forward_step(x1, x2)
-        (ps1, pt1), (ps2, pt2) = p1.split([bˢ, bᵗ]), p2.split([bˢ, bᵗ])
+        v1, _ = self.model(torch.cat([s1, t1]))
+        v1 = torch.nn.functional.normalize(v1)
 
-        self.update_queue('source', iˢ, ps2)
-        self.update_queue('target', iᵗ, pt2)
+        with torch.no_grad():
+            v2, _ = self.ema(torch.cat([s2, t2]))
+            v2 = torch.nn.functional.normalize(v2)
 
-        iw_lossˢ = self.iwcon(ps1, ps2, self.queue['source'])
-        iw_lossᵗ = self.iwcon(pt1, pt2, self.queue['target'])
+        (vs1, vt1), (vs2, vt2) = v1.split([bˢ, bᵗ]), v2.split([bˢ, bᵗ])
+
+        self.update_queue('source', iˢ, vs2)
+        self.update_queue('target', iᵗ, vt2)
+
+        iw_lossˢ = self.iwcon(vs1, vs2, self.queue['source'])
+        iw_lossᵗ = self.iwcon(vt1, vt2, self.queue['target'])
         iw_loss = iw_lossˢ + iw_lossᵗ
 
         return {
