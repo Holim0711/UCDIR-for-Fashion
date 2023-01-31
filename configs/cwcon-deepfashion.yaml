@@ -4,12 +4,12 @@ defaults:
 method:
     name: CWCon
     temperature: 0.2
-    num_clusters: 23
+    num_clusters: 16
     cwcon_weight: 0.5
     cwcon_temperature: 0.2
     cwcon_threshold: 0.2
-    cwcon_start: 0
-    cwcon_warmup: 0
+    cwcon_start: 3
+    cwcon_warmup: 12
 use_mlp_at_val: false
 ema: 0.999
 batch_size:

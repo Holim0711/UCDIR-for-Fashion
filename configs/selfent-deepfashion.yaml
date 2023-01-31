@@ -2,10 +2,17 @@ defaults:
     - dataset: DeepFashion
     - _self_
 method:
-    name: DomAdv
+    name: SelfEntropy
     temperature: 0.2
-    domadv_weight: 1.0
-    domadv_alpha: 1.0
+    num_clusters: 16
+    cwcon_weight: 0.0
+    cwcon_temperature: 0.2
+    cwcon_threshold: 0.2
+    cwcon_start: 15
+    cwcon_warmup: 0
+    selfent_temperature: 0.1
+    selfent_start: 15
+    selfent_weight: 0.5
 use_mlp_at_val: false
 ema: 0.999
 batch_size:
