@@ -5,7 +5,8 @@ from .utils import retrieval_report, load_moco_v2, BNN, CGD
 
 
 def change_momentum(model: torch.nn.Module, momentum: float):
-    if isinstance(model, (torch.nn.BatchNorm2d, torch.nn.InstanceNorm2d)):
+    if isinstance(model, (torch.nn.BatchNorm2d, torch.nn.BatchNorm1d,
+                          torch.nn.InstanceNorm2d, torch.nn.InstanceNorm1d)):
         model.momentum = 1 - momentum
     for child in model.children():
         change_momentum(child, momentum)
@@ -40,9 +41,9 @@ class BaseModule(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = load_moco_v2(remove_last_downsampling=False)
-        # self.model.head = BNN()
-        # self.model.head = CGD()
+        self.model = load_moco_v2(self.hparams.get('rld'))
+        if self.hparams.get('cgd') is not None:
+            self.model.head = CGD(config=self.hparams.cgd)
 
         change_momentum(self.model, self.hparams.ema)
         self.ema = EMA(self.model, self.hparams.ema)

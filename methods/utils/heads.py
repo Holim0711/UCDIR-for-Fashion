@@ -8,7 +8,7 @@ class BNN(torch.nn.Module):
     def __init__(self, num_features=2048):
         super().__init__()
         self.avgpool = torch.nn.AdaptiveAvgPool2d(1)
-        self.bn = torch.nn.BatchNorm2d(num_features)
+        self.bn = torch.nn.BatchNorm1d(num_features)
 
     def forward(self, x):
         x = self.avgpool(x)
@@ -59,5 +59,5 @@ class CGD(torch.nn.Module):
         aux = desc[0]
         desc = [r(d) for d, r in zip(desc, self.reductions)]
         desc = [torch.nn.functional.normalize(d) for d in desc]
-        feat = self.fc(torch.concat(desc))
+        feat = self.fc(torch.hstack(desc))
         return feat, aux
